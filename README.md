@@ -1,8 +1,7 @@
 <div align="center">
   <p>
     <!-- Redd -->
-    <img src="logo.png" width="500"><br>
-
+    <img src="https://raw.githubusercontent.com/avinashbot/redd/master/logo.png" width="500"><br>
     <!-- Badges -->
     <a href="https://rubygems.org/gems/redd">
       <img src="http://img.shields.io/gem/v/redd.svg?style=flat-square" alt="Gem Version">
@@ -14,7 +13,6 @@
       <img src="http://img.shields.io/gem/dt/redd.svg?style=flat-square" alt="Gem Downloads">
     </a>
   </p>
-
   <!-- Intro Text -->
   <p>
     <strong>Redd</strong> is a <strong>batteries-included</strong>
@@ -33,6 +31,8 @@
 
 ### Demo
 
+#### Reddit Bot
+
 ```ruby
 require 'redd'
 
@@ -44,33 +44,68 @@ session = Redd.it(
   password:   'hunter2'
 )
 
-session.subreddit('all').comment_stream do |comment|
+session.subreddit('all').comments.stream do |comment|
   if comment.body.include?('roll a dice')
-    comment.reply("I just rolled a dice! It's a #{rand(1..6)}!")
+    comment.reply("It's a #{rand(1..6)}!")
   elsif comment.body.include?('flip a coin')
-    comment.reply("I just flipped a coin! It's a #{%w(heads tails).sample}!")
+    comment.reply("It's a #{%w(heads tails).sample}!")
   end
+end
+```
+
+#### Web Application
+
+```ruby
+require 'sinatra'
+require 'redd/middleware'
+
+use Rack::Session::Cookie
+use Redd::Middleware,
+    user_agent:   'Redd:Username App:v1.0.0 (by /u/Mustermind)',
+    client_id:    'PQgS0UaX9l70oQ',
+    secret:       'PsF_kVZrW8nSVCG5kNsIgl-AaXE',
+    redirect_uri: 'http://localhost:4567/auth/reddit/callback',
+    scope:        %w(identity),
+    via:          '/auth/reddit'
+
+get '/' do
+  reddit = request.env['redd.session']
+
+  if reddit
+    "Hello /u/#{reddit.me.name}! <a href='/logout'>Logout</a>"
+  else
+    "<a href='/auth/reddit'>Sign in with reddit</a>"
+  end
+end
+
+get '/auth/reddit/callback' do
+  redirect to('/') unless request.env['redd.error']
+  "Error: #{request.env['redd.error'].message} (<a href='/'>Back</a>)"
+end
+
+get '/logout' do
+  request.env['redd.session'] = nil
+  redirect to('/')
 end
 ```
 
 ### FAQ
 
-#### Is that bot fully functional?
+#### Are those examples fully functional?
 **Yes**, that's all there is to it! You don't need to handle rate-limiting, refresh access tokens or protect against issues on reddit's end (like 5xx errors).
 
 #### Where can I find the documentation?
 
 [**Gem**](http://www.rubydoc.info/gems/redd/Redd/Models/Session) / [**GitHub**](http://www.rubydoc.info/github/avinashbot/redd/master/Redd/Models/Session)
 
-#### How do I request a feature / contribute?
+#### Where can I ask for help if I'm having issues?
+Check out the [**official subreddit**](https://www.reddit.com/r/Redd) or raise a [**GitHub issue**](https://github.com/avinashbot/redd/issues/new).
 
-- The quickest way to get a feature into Redd is to raise a GitHub issue.
-- Pull requests are also appreciated!
-- Don't hesitate! There are no stupid questions!
+#### How do I request a feature / contribute?
+Take a look at  [**CONTRIBUTING.md**](https://github.com/avinashbot/redd/blob/master/CONTRIBUTING.md).
 
 #### How can I contact you?
 [Reddit](https://www.reddit.com/message/compose/?to=Mustermind) /
-[GitHub](https://github.com/avinashbot/redd/issues/new) /
 [Email](mailto:avinash@dwarapu.me)
 
 ---

@@ -25,6 +25,11 @@ module Redd
         raise 'abstract method: this strategy cannot authenticate with reddit'
       end
 
+      # @return [Boolean] whether the access object can be refreshed
+      def refreshable?(_access)
+        false
+      end
+
       # @abstract Refresh the authentication and return the refreshed access
       # @param _access [Access, String] the access to refresh
       # @return [Access] the new access
@@ -54,8 +59,8 @@ module Redd
 
       def request_access(grant_type, options = {})
         response = post('/api/v1/access_token', { grant_type: grant_type }.merge(options))
-        raise AuthenticationError.new(response) if response.body.key?(:error)
-        Models::Access.new(self, response.body)
+        raise Errors::AuthenticationError.new(response) if response.body.key?(:error)
+        Models::Access.new(response.body)
       end
     end
   end

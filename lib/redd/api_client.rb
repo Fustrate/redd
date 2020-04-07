@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require_relative 'client'
-require_relative 'error'
 require_relative 'utilities/error_handler'
 require_relative 'utilities/rate_limiter'
 require_relative 'utilities/unmarshaller'
@@ -16,6 +15,7 @@ module Redd
     attr_accessor :access
 
     # Create a new API client with an auth strategy.
+    # TODO: Give user option to pass through all retryable errors.
     # @param auth [AuthStrategies::AuthStrategy] the auth strategy to use
     # @param endpoint [String] the API endpoint
     # @param user_agent [String] the user agent to send
@@ -57,7 +57,6 @@ module Redd
     end
 
     def model(verb, path, options = {})
-      # XXX: make unmarshal explicit in methods?
       unmarshal(send(verb, path, options).body)
     end
 
@@ -68,19 +67,16 @@ module Redd
       ensure_access_is_valid
       # Setup base API params and make request
       api_params = { api_type: 'json', raw_json: 1 }.merge(params)
-      response = @rate_limiter.after_limit { super(verb, path, params: api_params, **options) }
-      # Check for errors in the returned response
-      response_error = @error_handler.check_error(response, raw: raw)
-      raise response_error unless response_error.nil?
-      # All done, return the response
-      @failures = 0
-      response
-    rescue Redd::ServerError, HTTP::TimeoutError => e
-      # FIXME: maybe only retry GET requests, for obvious reasons?
-      @failures += 1
-      raise e if @failures > @max_retries
-      warn "Redd got a #{e.class.name} error (#{e.message}), retrying..."
-      retry
+
+      # This loop is retried @max_retries number of times until it succeeds
+      handle_retryable_errors do
+        response = @rate_limiter.after_limit { super(verb, path, params: api_params, **options) }
+        # Raise errors if encountered at the API level.
+        response_error = @error_handler.check_error(response, raw: raw)
+        raise response_error unless response_error.nil?
+        # All done, return the response
+        response
+      end
     end
 
     private
@@ -90,7 +86,24 @@ module Redd
       # If access is nil, panic
       raise 'client access is nil, try calling #authenticate' if @access.nil?
       # Refresh access if auto_refresh is enabled
-      refresh if @access.expired? && @auto_refresh
+      refresh if @access.expired? && @auto_refresh && @auth && @auth.refreshable?(@access)
+    end
+
+    def handle_retryable_errors
+      response = yield
+    rescue Errors::ServerError, HTTP::TimeoutError => e
+      # FIXME: maybe only retry GET requests, for obvious reasons?
+      @failures += 1
+      raise e if @failures > @max_retries
+      warn "Redd got a #{e.class.name} error (#{e.message}), retrying..."
+      retry
+    rescue Errors::RateLimitError => e
+      warn "Redd was rate limited for #{e.duration} seconds, waiting..."
+      sleep e.duration
+      retry
+    else
+      @failures = 0
+      response
     end
 
     def connection
